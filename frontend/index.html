@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>英语单词拼拼乐</title>
+    <style>
+        :root {
+            --primary: #667eea;
+            --secondary: #764ba2;
+            --success: #28a745;
+            --danger: #dc3545;
+            --bg: #f8f9fa;
+        }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+            display: flex; justify-content: center; align-items: center;
+            min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box;
+        }
+        .app-container {
+            background: white; padding: 30px; border-radius: 20px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.2);
+            width: 100%; max-width: 480px; text-align: center;
+        }
+        h1 { margin: 0 0 20px; color: #333; }
+        
+        /* 游戏区域 */
+        .game-box { background: var(--bg); padding: 20px; border-radius: 12px; margin-bottom: 20px; }
+        .hint-text { font-size: 28px; letter-spacing: 6px; font-weight: bold; color: #495057; min-height: 40px; }
+        .input-field {
+            width: 100%; padding: 15px; font-size: 20px; text-align: center;
+            border: 2px solid #ced4da; border-radius: 8px; margin: 15px 0; box-sizing: border-box;
+            text-transform: lowercase; transition: border-color 0.3s;
+        }
+        .input-field:focus { outline: none; border-color: var(--primary); }
+        
+        /* 按钮组 */
+        .btn-group { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        .btn {
+            flex: 1; padding: 12px; border: none; border-radius: 8px; cursor: pointer;
+            font-weight: bold; color: white; transition: transform 0.1s, opacity 0.2s;
+            min-width: 100px;
+        }
+        .btn:active { transform: scale(0.95); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-play { background: #007bff; }
+        .btn-spell { background: #17a2b8; }
+        .btn-submit { background: var(--success); width: 100%; font-size: 18px; }
+        .btn-next { background: #ffc107; color: #333; width: 100%; margin-bottom: 15px;}
+
+        /* 词库管理区域 */
+        .panel {
+            background: #f1f3f5; padding: 15px; border-radius: 12px; margin-top: 30px;
+            border-top: 4px solid var(--primary); text-align: left;
+        }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .panel h3 { margin: 0; font-size: 16px; color: #495057; }
+        .badge { background: var(--primary); color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+        
+        .add-group { display: flex; gap: 10px; margin-bottom: 15px; }
+        .add-group input { flex: 1; padding: 10px; border: 1px solid #ced4da; border-radius: 6px; }
+        .btn-add { background: #20c997; padding: 10px 20px; border: none; color: white; border-radius: 6px; cursor: pointer; }
+        
+        .word-cloud { display: flex; flex-wrap: wrap; gap: 8px; max-height: 150px; overflow-y: auto; }
+        .tag { background: white; padding: 5px 12px; border-radius: 15px; font-size: 13px; border: 1px solid #dee2e6; color: #495057; }
+        
+        /* 提示消息 */
+        .toast {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            padding: 12px 24px; border-radius: 8px; color: white; font-weight: bold;
+            opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 1000;
+        }
+        .toast.show { opacity: 1; }
+        .toast.success { background: var(--success); }
+        .toast.error { background: var(--danger); }
+        .toast.info { background: #6c757d; }
+
+        audio { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <h1>🎧 英语单词拼拼乐</h1>
+    
+    <!-- 游戏区 -->
+    <div class="game-box">
+        <div id="hint" class="hint-text">点击下方按钮开始</div>
+    </div>
+    
+    <button class="btn btn-next" onclick="startGame()">🔄 抽取新单词</button>
+    
+    <div class="btn-group">
+        <button class="btn btn-play" id="btnWord" onclick="playAudio('word')" disabled>🔊 读单词</button>
+        <button class="btn btn-spell" id="btnSpell" onclick="playAudio('spell')" disabled>🔡 拼字母</button>
+    </div>
+    
+    <input type="text" id="guessInput" class="input-field" placeholder="输入你听到的单词..." disabled>
+    <button class="btn btn-submit" id="btnSubmit" onclick="checkAnswer()" disabled>提交答案</button>
+    
+    <audio id="audioPlayer"></audio>
+
+    <!-- 词库管理区 -->
+    <div class="panel">
+        <div class="panel-header">
+            <h3>⚙️ 词库管理</h3>
+            <span class="badge" id="wordCount">0 词</span>
+        </div>
+        <div class="add-group">
+            <input type="text" id="newWordInput" placeholder="输入新单词并回车">
+            <button class="btn-add" onclick="addNewWord()">录入</button>
+        </div>
+        <div id="wordCloud" class="word-cloud"></div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+    const API_BASE = ''; 
+    
+    // 状态管理
+    let isPlaying = false;
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+        refreshWordCloud();
+        
+        // 回车快捷录入
+        document.getElementById('newWordInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') addNewWord();
+        });
+    });
+
+    // 通用 UI 提示
+    function showToast(msg, type = 'info') {
+        const toast = document.getElementById('toast');
+        toast.innerText = msg;
+        toast.className = `toast show ${type}`;
+        setTimeout(() => toast.className = 'toast', 2500);
+    }
+
+    // 1. 词库管理 API
+    async function refreshWordCloud() {
+        try {
+            const res = await fetch(`${API_BASE}/api/words`, { credentials: 'include' });
+            const data = await res.json();
+            document.getElementById('wordCount').innerText = `${data.count} 词`;
+            
+            const cloud = document.getElementById('wordCloud');
+            cloud.innerHTML = '';
+            data.words.forEach(w => {
+                const tag = document.createElement('span');
+                tag.className = 'tag';
+                tag.innerText = w;
+                cloud.appendChild(tag);
+            });
+        } catch (err) {
+            console.error('加载词库失败', err);
+        }
+    }
+
+    async function addNewWord() {
+        const input = document.getElementById('newWordInput');
+        const word = input.value.trim();
+        if (!word) return;
+
+        try {
+            const res = await fetch(`${API_BASE}/api/words`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ word: word })
+            });
+            const data = await res.json();
+            showToast(data.message, data.success ? 'success' : 'error');
+            if (data.success) {
+                input.value = '';
+                refreshWordCloud();
+            }
+        } catch (err) {
+            showToast('网络请求失败', 'error');
+        }
+    }
+
+    // 2. 游戏逻辑 API
+    async function startGame() {
+        showToast('正在抽题...', 'info');
+        try {
+            const res = await fetch(`${API_BASE}/api/game/start`, { 
+                method: 'POST', 
+                credentials: 'include' // 必须携带 cookie 以维持 session
+            });
+            const data = await res.json();
+            
+            document.getElementById('hint').innerText = '_ '.repeat(data.length).trim();
+            document.getElementById('guessInput').disabled = false;
+            document.getElementById('guessInput').value = '';
+            document.getElementById('btnSubmit').disabled = false;
+            document.getElementById('btnWord').disabled = false;
+            document.getElementById('btnSpell').disabled = false;
+            
+            showToast(`开始! (词库: ${data.total_words})`, 'success');
+        } catch (err) {
+            showToast('抽题失败', 'error');
+        }
+    }
+
+    async function playAudio(mode) {
+        if (isPlaying) return;
+        isPlaying = true;
+        showToast('生成语音中...', 'info');
+        
+        try {
+            const res = await fetch(`${API_BASE}/api/game/audio`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            });
+            
+            if (!res.ok) throw new Error('Audio fetch failed');
+            
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const player = document.getElementById('audioPlayer');
+            player.src = url;
+            await player.play();
+            
+            player.onended = () => {
+                URL.revokeObjectURL(url);
+                isPlaying = false;
+            };
+        } catch (err) {
+            showToast('语音生成失败', 'error');
+            isPlaying = false;
+        }
+    }
+
+    async function checkAnswer() {
+        const guess = document.getElementById('guessInput').value.trim();
+        if (!guess) return showToast('请输入答案', 'error');
+
+        try {
+            const res = await fetch(`${API_BASE}/api/game/check`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ guess })
+            });
+            const data = await res.json();
+            showToast(data.message, data.success ? 'success' : 'error');
+        } catch (err) {
+            showToast('校验失败', 'error');
+        }
+    }
+</script>
+</body>
+</html>
